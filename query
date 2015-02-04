@@ -1,0 +1,4 @@
+#!/bin/sh
+if [ -z ${JAVA_HOME+x} ]; then JAVA_CMD="java"; else JAVA_CMD=$JAVA_HOME/bin/java; fi
+INSTALL_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
+$JAVA_CMD -Dfile.encoding=UTF-8 -cp $INSTALL_DIR/cql-xmlpipe-1.0-SNAPSHOT.jar ru.factsearch.Query ${1+"$@"}
