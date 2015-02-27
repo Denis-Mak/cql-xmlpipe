@@ -34,6 +34,6 @@ and use command line shell script (as in example) or modify source code as you n
 
 
 **Requirements**
-   Cassandra version > 2.0
-   CQL supported
+* Cassandra version > 2.0
+* CQL supported
 
