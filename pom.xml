@@ -6,7 +6,7 @@
 
     <groupId>ru.factsearch</groupId>
     <artifactId>cql-xmlpipe</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0</version>
 
     <dependencies>
         <dependency>
@@ -55,6 +55,38 @@
                 <configuration>
                     <source>1.8</source>
                     <target>1.8</target>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>com.google.code.maven-replacer-plugin</groupId>
+                <artifactId>replacer</artifactId>
+                <version>1.5.3</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>replace</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <basedir>target/..</basedir>
+                    <includes>
+                        <include>query</include>
+                        <include>query.bat</include>
+                    </includes>
+                    <outputDir>target</outputDir>
+                    <regex>false</regex>
+                    <replacements>
+                        <replacement>
+                            <token>!!version!!</token>
+                            <value>${version}</value>
+                        </replacement>
+                        <replacement>
+                            <token>!!artifactId!!</token>
+                            <value>${artifactId}</value>
+                        </replacement>
+                    </replacements>
                 </configuration>
             </plugin>
             <plugin>

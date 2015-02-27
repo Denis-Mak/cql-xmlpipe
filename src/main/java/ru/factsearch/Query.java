@@ -1,20 +1,26 @@
 package ru.factsearch;
 
 import com.datastax.driver.core.*;
+import com.datastax.driver.core.exceptions.ReadTimeoutException;
 import org.apache.commons.cli.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
-import java.util.stream.Collectors;
+import java.io.BufferedOutputStream;
+import java.util.Arrays;
+import java.util.Collection;
 
 /**
  *
  */
 public class Query {
+    private static final Logger log = LoggerFactory.getLogger(Query.class);
     private static final int _batchSize = 1000;
 
-    private static String[] keyColumnNames = new String[10];
+    private static String[] keyColumnNames;
     private static DataType[] keyColumnTypes;
 
     @SuppressWarnings("static-access")
@@ -86,7 +92,15 @@ public class Query {
                     pass = "";
                 }
             }
-            keyColumnNames = cmd.getOptionValues("keys");
+
+            int idx = 0;
+            String[] tmpKeyColumnNames = new String[100];
+            for (String keyColumnName: cmd.getOptionValues("keys")){
+                if (!"".equals(keyColumnName)){
+                    tmpKeyColumnNames[idx++] = keyColumnName;
+                }
+            }
+            keyColumnNames = Arrays.copyOf(tmpKeyColumnNames, idx);
             cql = cmd.getOptionValue("cql");
         } catch (ParseException|NumberFormatException e) {
             HelpFormatter formatter = new HelpFormatter();
@@ -100,27 +114,35 @@ public class Query {
                     .addContactPoint(connectionPointHost)
                     .withPort(connectionPointPort)
                     .withCredentials(user, pass)
+                    .withSocketOptions(new SocketOptions().setReadTimeoutMillis(20000))
                     .build();
         } else {
             cluster = Cluster.builder()
                     .addContactPoint(connectionPointHost)
                     .withPort(connectionPointPort)
+                    .withSocketOptions(new SocketOptions().setReadTimeoutMillis(20000))
                     .build();
         }
-        Session session = cluster.connect();
         XMLOutputFactory xof =  XMLOutputFactory.newInstance();
-        try {
-            XMLStreamWriter writer = xof.createXMLStreamWriter(System.out);
+        try (Session session = cluster.connect()) {
+            XMLStreamWriter writer = xof.createXMLStreamWriter(new BufferedOutputStream(System.out));
             writer.writeStartDocument("utf-8", "1.0");
             writer.setPrefix("sphinx", "sphinx");
-            writer.writeStartElement("sphinx","docset");
+            writer.writeStartElement("sphinx", "docset");
             Statement statement = new SimpleStatement(cql);
             statement.setFetchSize(_batchSize);
 
             ResultSet rs = session.execute(statement);
+            int counter = 0;
+            int total = 0;
             while (!rs.isExhausted()) {
-                for (Row row: rs){
+                for (Row row : rs) {
                     processRow(row, writer, rs.getColumnDefinitions());
+                    if (counter++ > _batchSize) {
+                        total = total + counter;
+                        log.debug("Read records: " + total);
+                        counter = 0;
+                    }
                 }
             }
 
@@ -129,9 +151,11 @@ public class Query {
             writer.close();
         } catch (XMLStreamException e) {
             e.printStackTrace();
+        } catch (ReadTimeoutException e) {
+            // ignore it and retry
+        } finally {
+            cluster.close();
         }
-        session.close();
-        cluster.close();
     }
 
     private static void processRow(Row row, XMLStreamWriter writer, ColumnDefinitions columnDefinitions) throws XMLStreamException{
@@ -200,18 +224,25 @@ public class Query {
         } else {
             for (DataType primitiveType: DataType.allPrimitiveTypes()){
                 if (DataType.set(primitiveType).equals(dataType)) {
-                    return row.getSet(name, primitiveType.asJavaClass()).stream()
-                            .map(Object::toString)
-                            .collect(Collectors.joining(" "));
+                    return collectionToString(row.getSet(name, primitiveType.asJavaClass()));
                 } else if (DataType.list(primitiveType).equals(dataType)) {
-                    return row.getList(name, primitiveType.asJavaClass()).stream()
-                            .map(Object::toString)
-                            .collect(Collectors.joining(" "));
+                    return collectionToString(row.getList(name, primitiveType.asJavaClass()));
                 }
             }
         }
 
         return "";
+    }
+
+    private static <T> String collectionToString(Collection<T> set){
+        if (set.isEmpty()){
+            return "";
+        }
+        String str = "";
+        for (T obj:set){
+            str = obj.toString() + " ";
+        }
+        return str.substring(0, str.length() - 1);
     }
 
     public static long getStringKey (long hashBase, String str){

@@ -6,13 +6,19 @@
             <pattern>%d{HH:mm:ss} [%level] %mdc{req.requestURL} %logger{32} - %msg%n</pattern>
         </encoder>
     </appender>
-
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>log.txt</file>
+        <append>true</append>
+        <encoder>
+            <pattern>%d{HH:mm:ss} [%level] %logger{32} - %msg%n</pattern>
+        </encoder>
+    </appender>
     <!-- don't change levels here, use profiles instead -->
     <logger name="${package}" level="WARN" />
 
     <root>
-        <level value="WARN"/>
-        <appender-ref ref="STDOUT"/>
+        <level value="DEBUG"/>
+        <appender-ref ref="FILE"/>
     </root>
 
 </configuration>
