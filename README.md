@@ -7,8 +7,9 @@ and use command line shell script (as in example) or modify source code as you n
 
 **Usage example**
     `query -keys url,pos -cql "SELECT content, title, url, pos FROM test.Pages"`
-** Sphinx config example **
-    `source src_test
+
+**Sphinx config example**
+    source src_test
     {
     type                    = xmlpipe2
     xmlpipe_command         = /usr/local/cql-xmlpipe/query -host 192.168.1.101 -user cassandra_user -pass cassandra_user_password -keys url, pos \
@@ -18,7 +19,7 @@ and use command line shell script (as in example) or modify source code as you n
     xmlpipe_attr_string     = url
     xmlpipe_attr_uint       = pos
     xmlpipe_fixup_utf8      = 1
-    }`
+    }
 
 **Requirements**
    Cassandra version > 2.0
