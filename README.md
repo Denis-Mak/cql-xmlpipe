@@ -9,7 +9,6 @@ and use command line shell script (as in example) or modify source code as you n
     `query -keys url,pos -cql "SELECT content, title, url, pos FROM test.Pages"`
 
 **Sphinx config example**
-    ```
     source src_test
 
     {
@@ -31,7 +30,7 @@ and use command line shell script (as in example) or modify source code as you n
     xmlpipe_fixup_utf8      = 1
 
     }
-    ```
+
 
 **Requirements**
    Cassandra version > 2.0
