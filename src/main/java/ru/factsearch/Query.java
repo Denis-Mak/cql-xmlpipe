@@ -1,15 +1,19 @@
 package ru.factsearch;
 
+import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
+import ch.qos.logback.core.FileAppender;
 import com.datastax.driver.core.*;
 import com.datastax.driver.core.exceptions.ReadTimeoutException;
 import org.apache.commons.cli.*;
-import org.slf4j.Logger;
+import ch.qos.logback.classic.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.xml.stream.XMLOutputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 import java.io.BufferedOutputStream;
+import java.text.DecimalFormat;
 import java.util.Arrays;
 import java.util.Collection;
 
@@ -17,8 +21,9 @@ import java.util.Collection;
  *
  */
 public class Query {
-    private static final Logger log = LoggerFactory.getLogger(Query.class);
+    private static Logger log;
     private static final int _batchSize = 1000;
+    private static final DecimalFormat decimalFormat = new DecimalFormat("###,###");
 
     private static String[] keyColumnNames;
     private static DataType[] keyColumnTypes;
@@ -28,7 +33,7 @@ public class Query {
         // Parse command line, set config variables
         Options options = new Options();
         options.addOption(OptionBuilder
-                .withArgName("host address")
+                .withArgName("host addresses")
                 .hasArg()
                 .withDescription(" connection point node host")
                 .withLongOpt("host")
@@ -66,18 +71,25 @@ public class Query {
                 .withDescription("Names of key columns. If there are more than one bigint/int/varint column specified Sphinx key will be generated from key columns using hash function.")
                 .withLongOpt("keys")
                 .create());
+        options.addOption(OptionBuilder
+                .withArgName("debug file name")
+                .hasArg()
+                .withDescription(" turns debug mode. You need to specify debug file name.")
+                .withLongOpt("debug")
+                .create());
         CommandLineParser parser = new BasicParser();
         String cql = "";
-        String connectionPointHost = "";
+        String[] connectionPoints = null;
         int connectionPointPort = 0;
         String user = null;
         String pass = null;
+        boolean isDebugOn = false;
         try {
             CommandLine cmd = parser.parse( options, args );
             if (cmd.hasOption("host")) {
-                connectionPointHost = cmd.getOptionValue("host");
+                connectionPoints = cmd.getOptionValue("host").split(",");
             } else {
-                connectionPointHost = "localhost";
+                connectionPoints = new String[]{"localhost"};
             }
             if (cmd.hasOption("port")) {
                 connectionPointPort = Integer.parseInt(cmd.getOptionValue("port"));
@@ -91,6 +103,10 @@ public class Query {
                 } else {
                     pass = "";
                 }
+            }
+            if (cmd.hasOption("debug")) {
+                isDebugOn = true;
+                setUpLogger(cmd.getOptionValue("debug"));
             }
 
             int idx = 0;
@@ -111,14 +127,14 @@ public class Query {
         Cluster cluster;
         if (user != null) {
             cluster = Cluster.builder()
-                    .addContactPoint(connectionPointHost)
+                    .addContactPoints(connectionPoints)
                     .withPort(connectionPointPort)
                     .withCredentials(user, pass)
                     .withSocketOptions(new SocketOptions().setReadTimeoutMillis(20000))
                     .build();
         } else {
             cluster = Cluster.builder()
-                    .addContactPoint(connectionPointHost)
+                    .addContactPoints(connectionPoints)
                     .withPort(connectionPointPort)
                     .withSocketOptions(new SocketOptions().setReadTimeoutMillis(20000))
                     .build();
@@ -135,13 +151,15 @@ public class Query {
             ResultSet rs = session.execute(statement);
             int counter = 0;
             int total = 0;
+            long timer = System.nanoTime();
             while (!rs.isExhausted()) {
                 for (Row row : rs) {
                     processRow(row, writer, rs.getColumnDefinitions());
-                    if (counter++ > _batchSize) {
+                    if (isDebugOn && counter++ > _batchSize) {
                         total = total + counter;
-                        log.debug("Read records: " + total);
+                        log.debug("Read records: {} processing time: {} msec", total, durationFormatted(timer));
                         counter = 0;
+                        timer = System.nanoTime();
                     }
                 }
             }
@@ -258,5 +276,28 @@ public class Query {
         } else {
             return ~hash + 1;
         }
+    }
+
+    private static String durationFormatted(long startTimeInNanoseconds){
+        return decimalFormat.format((System.nanoTime() - startTimeInNanoseconds) / 1000000L);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void setUpLogger(String debugFile){
+        LoggerContext loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
+
+        FileAppender appender = new FileAppender();
+        appender.setContext(loggerContext);
+        appender.setFile(debugFile);
+        appender.setAppend(false);
+        PatternLayoutEncoder encoder = new PatternLayoutEncoder();
+        encoder.setContext(loggerContext);
+        encoder.setPattern("%d{HH:mm:ss} [%level] %logger{32} - %msg%n");
+        encoder.start();
+        appender.setEncoder(encoder);
+        appender.start();
+
+        log = loggerContext.getLogger("Main");
+        log.addAppender(appender);
     }
 }
