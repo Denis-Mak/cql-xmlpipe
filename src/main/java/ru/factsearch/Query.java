@@ -140,6 +140,7 @@ public class Query {
                     .build();
         }
         XMLOutputFactory xof =  XMLOutputFactory.newInstance();
+        long totalTimer = System.nanoTime();
         try (Session session = cluster.connect()) {
             XMLStreamWriter writer = xof.createXMLStreamWriter(new BufferedOutputStream(System.out));
             writer.writeStartDocument("utf-8", "1.0");
@@ -147,7 +148,7 @@ public class Query {
             writer.writeStartElement("sphinx", "docset");
             Statement statement = new SimpleStatement(cql);
             statement.setFetchSize(_batchSize);
-
+            statement.setConsistencyLevel(ConsistencyLevel.ONE);
             ResultSet rs = session.execute(statement);
             int counter = 0;
             int total = 0;
@@ -174,6 +175,7 @@ public class Query {
         } finally {
             cluster.close();
         }
+        log.debug("Query export successfully. Total processing time: {} msec", durationFormatted(totalTimer));
     }
 
     private static void processRow(Row row, XMLStreamWriter writer, ColumnDefinitions columnDefinitions) throws XMLStreamException{
