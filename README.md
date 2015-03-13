@@ -2,7 +2,7 @@
 If you need to index data from Cassandra database using Sphinx xmlpipe2 data source, this project might be useful.
 It is generating XML specified by [Sphinx documentation](http://sphinxsearch.com/docs/current.html#xmlpipe2).
 And can generate keys for Sphinx if you have no suitable int or bigint primary keys in Cassandra tables or use UUID.
-You can download [compiled JAR](https://github.com/Denis-Mak/cql-xmlpipe/releases/download/1.0/cql-xmlpipe-1.0.1.tar.gz)
+You can download [compiled JAR](https://github.com/Denis-Mak/cql-xmlpipe/releases/download/1.0.1/cql-xmlpipe-1.0.1.tar.gz)
 and use command line shell script (as in example) or modify source code as you need.
 
 **Usage example**
