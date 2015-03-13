@@ -1,12 +1,14 @@
 package ru.factsearch;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
 import ch.qos.logback.core.FileAppender;
 import com.datastax.driver.core.*;
-import com.datastax.driver.core.exceptions.ReadTimeoutException;
+import com.datastax.driver.core.policies.DowngradingConsistencyRetryPolicy;
+import com.datastax.driver.core.policies.ExponentialReconnectionPolicy;
 import org.apache.commons.cli.*;
-import ch.qos.logback.classic.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.xml.stream.XMLOutputFactory;
@@ -22,7 +24,7 @@ import java.util.Collection;
  */
 public class Query {
     private static Logger log;
-    private static final int _batchSize = 1000;
+    private static final int _batchSize = 10000;
     private static final DecimalFormat decimalFormat = new DecimalFormat("###,###");
 
     private static String[] keyColumnNames;
@@ -107,6 +109,8 @@ public class Query {
             if (cmd.hasOption("debug")) {
                 isDebugOn = true;
                 setUpLogger(cmd.getOptionValue("debug"));
+            } else {
+
             }
 
             int idx = 0;
@@ -131,6 +135,8 @@ public class Query {
                     .withPort(connectionPointPort)
                     .withCredentials(user, pass)
                     .withSocketOptions(new SocketOptions().setReadTimeoutMillis(20000))
+                    .withReconnectionPolicy(new ExponentialReconnectionPolicy(500, 300000))
+                    .withRetryPolicy(DowngradingConsistencyRetryPolicy.INSTANCE)
                     .build();
         } else {
             cluster = Cluster.builder()
@@ -164,21 +170,24 @@ public class Query {
                     }
                 }
             }
-
+            writer.writeCharacters("\n");
             writer.writeEndElement(); // sphinx:docset
             writer.flush();
             writer.close();
-        } catch (XMLStreamException e) {
-            e.printStackTrace();
-        } catch (ReadTimeoutException e) {
-            // ignore it and retry
+            if (isDebugOn) log.debug("Query export successfully. Total processing time: {} msec", durationFormatted(totalTimer));
+        } catch (Exception e) {
+            if (isDebugOn) {
+                log.error("Exception: ", e);
+            } else {
+                e.printStackTrace();
+            }
         } finally {
             cluster.close();
         }
-        log.debug("Query export successfully. Total processing time: {} msec", durationFormatted(totalTimer));
     }
 
     private static void processRow(Row row, XMLStreamWriter writer, ColumnDefinitions columnDefinitions) throws XMLStreamException{
+        writer.writeCharacters("\n");
         writer.writeStartElement("sphinx", "document");
         writer.writeAttribute("id", getId(row, columnDefinitions));
         for (ColumnDefinitions.Definition definition: columnDefinitions) {
@@ -258,11 +267,11 @@ public class Query {
         if (set.isEmpty()){
             return "";
         }
-        String str = "";
+        StringBuilder sb = new StringBuilder();
         for (T obj:set){
-            str = obj.toString() + " ";
+            sb.append(obj.toString()).append(" ");
         }
-        return str.substring(0, str.length() - 1);
+        return sb.substring(0, sb.length() - 1);
     }
 
     public static long getStringKey (long hashBase, String str){
@@ -300,6 +309,7 @@ public class Query {
         appender.start();
 
         log = loggerContext.getLogger("Main");
+        log.setLevel(Level.DEBUG);
         log.addAppender(appender);
     }
 }
