@@ -7,17 +7,17 @@
         </encoder>
     </appender>
     <appender name="FILE" class="ch.qos.logback.core.FileAppender">
-        <file>log.txt</file>
-        <append>true</append>
+        <file>cql-debug.log</file>
         <encoder>
-            <pattern>%d{HH:mm:ss} [%level] %logger{32} - %msg%n</pattern>
+            <pattern>%d{HH:mm:ss} [%level] %mdc{req.requestURL} %logger{32} - %msg%n</pattern>
         </encoder>
     </appender>
-    <!-- don't change levels here, use profiles instead -->
-    <logger name="${package}" level="WARN" />
 
+
+    <logger name="${package}" level="WARN" />
+    <logger name="com.datastax" level="ERROR" />
     <root>
-        <level value="DEBUG"/>
+        <level value="ERROR"/>
         <appender-ref ref="FILE"/>
     </root>
 
