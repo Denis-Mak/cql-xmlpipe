@@ -8,6 +8,8 @@ import ch.qos.logback.core.FileAppender;
 import com.datastax.driver.core.*;
 import com.datastax.driver.core.policies.DowngradingConsistencyRetryPolicy;
 import com.datastax.driver.core.policies.ExponentialReconnectionPolicy;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.cli.*;
 import org.slf4j.LoggerFactory;
 
@@ -18,14 +20,17 @@ import java.io.BufferedOutputStream;
 import java.text.DecimalFormat;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.List;
+import java.util.StringJoiner;
 
 /**
  *
  */
 public class Query {
     private static Logger log;
-    private static final int _batchSize = 10000;
+    private static final int _batchSize = 1000;
     private static final DecimalFormat decimalFormat = new DecimalFormat("###,###");
+    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private static String[] keyColumnNames;
     private static DataType[] keyColumnTypes;
@@ -109,8 +114,6 @@ public class Query {
             if (cmd.hasOption("debug")) {
                 isDebugOn = true;
                 setUpLogger(cmd.getOptionValue("debug"));
-            } else {
-
             }
 
             int idx = 0;
@@ -134,7 +137,7 @@ public class Query {
                     .addContactPoints(connectionPoints)
                     .withPort(connectionPointPort)
                     .withCredentials(user, pass)
-                    .withSocketOptions(new SocketOptions().setReadTimeoutMillis(20000))
+                    .withSocketOptions(new SocketOptions().setReadTimeoutMillis(40000))
                     .withReconnectionPolicy(new ExponentialReconnectionPolicy(500, 300000))
                     .withRetryPolicy(DowngradingConsistencyRetryPolicy.INSTANCE)
                     .build();
@@ -142,32 +145,29 @@ public class Query {
             cluster = Cluster.builder()
                     .addContactPoints(connectionPoints)
                     .withPort(connectionPointPort)
-                    .withSocketOptions(new SocketOptions().setReadTimeoutMillis(20000))
+                    .withSocketOptions(new SocketOptions().setReadTimeoutMillis(40000))
                     .build();
         }
         XMLOutputFactory xof =  XMLOutputFactory.newInstance();
         long totalTimer = System.nanoTime();
         try (Session session = cluster.connect()) {
-            XMLStreamWriter writer = xof.createXMLStreamWriter(new BufferedOutputStream(System.out));
+            XMLStreamWriter writer = xof.createXMLStreamWriter(new BufferedOutputStream(System.out), "UTF-8");
             writer.writeStartDocument("utf-8", "1.0");
             writer.setPrefix("sphinx", "sphinx");
             writer.writeStartElement("sphinx", "docset");
             Statement statement = new SimpleStatement(cql);
             statement.setFetchSize(_batchSize);
-            statement.setConsistencyLevel(ConsistencyLevel.ONE);
             ResultSet rs = session.execute(statement);
             int counter = 0;
             int total = 0;
             long timer = System.nanoTime();
-            while (!rs.isExhausted()) {
-                for (Row row : rs) {
-                    processRow(row, writer, rs.getColumnDefinitions());
-                    if (isDebugOn && counter++ > _batchSize) {
-                        total = total + counter;
-                        log.debug("Read records: {} processing time: {} msec", total, durationFormatted(timer));
-                        counter = 0;
-                        timer = System.nanoTime();
-                    }
+            for (Row row : rs) {
+                processRow(row, writer, rs.getColumnDefinitions());
+                if (isDebugOn && counter++ > _batchSize) {
+                    total = total + counter;
+                    log.debug("Read records: {} processing time: {} msec", total, durationFormatted(timer));
+                    counter = 0;
+                    timer = System.nanoTime();
                 }
             }
             writer.writeCharacters("\n");
@@ -192,7 +192,7 @@ public class Query {
         writer.writeAttribute("id", getId(row, columnDefinitions));
         for (ColumnDefinitions.Definition definition: columnDefinitions) {
             writer.writeStartElement(definition.getName());
-            writer.writeCharacters(getValue(row, definition.getName(), definition.getType()));
+            writeValue(row, definition.getName(), definition.getType(), writer);
             writer.writeEndElement();
         }
         writer.writeEndElement(); // sphinx:document
@@ -207,22 +207,32 @@ public class Query {
         }
         if (keyColumnNames.length == 1 &&
                 (DataType.bigint().equals(keyColumnTypes[0]) || DataType.cint().equals(keyColumnTypes[0]) || DataType.varint().equals(keyColumnTypes[0]))) {
-            return getValue(row, keyColumnNames[0], keyColumnTypes[0]);
+            return Integer.toString(row.getInt(keyColumnNames[0]));
         }
 
         long hashBase = 0;
-        String str = "";
+        StringJoiner sj = new StringJoiner(" ");
         for (int i = 0; i < keyColumnNames.length; i++){
             // If at least one of key columns is int or long use it for hashBase
             if ((DataType.cint().equals(keyColumnTypes[i]) || DataType.bigint().equals(keyColumnTypes[i])) && hashBase == 0) {
                 hashBase = row.getInt(keyColumnNames[i]);
             } else {
                 // other columns concatenate into big string
-                str += getValue(row, keyColumnNames[i], keyColumnTypes[i]) + " ";
+                sj.add(getValue(row, keyColumnNames[i], keyColumnTypes[i]));
             }
         }
 
-        return Long.toString(getStringKey(hashBase, str));
+        return Long.toString(getStringKey(hashBase, sj.toString()));
+    }
+
+    private static void writeValue(Row row, String name, DataType dataType, XMLStreamWriter writer) throws XMLStreamException{
+        if (DataType.ascii().equals(dataType) || DataType.text().equals(dataType) || DataType.varchar().equals(dataType)){
+            parseString(row.getString(name), writer);
+        } else if (DataType.blob().equals(dataType)){
+            writer.writeCData(row.getBytes(name).toString());
+        } else {
+            writer.writeCharacters(getValue(row, name, dataType));
+        }
     }
 
     private static String getValue(Row row, String name, DataType dataType){
@@ -237,7 +247,7 @@ public class Query {
         } else if (DataType.cdouble().equals(dataType)){
             return Double.toString(row.getDouble(name));
         } else if (DataType.blob().equals(dataType)){
-            return "<![CDATA[" + row.getBytes(name).toString() + "]]>";
+            return row.getBytes(name).toString();
         } else if (DataType.cfloat().equals(dataType)){
             return Float.toString(row.getFloat(name));
         } else if (DataType.counter().equals(dataType)){
@@ -259,7 +269,6 @@ public class Query {
                 }
             }
         }
-
         return "";
     }
 
@@ -272,6 +281,30 @@ public class Query {
             sb.append(obj.toString()).append(" ");
         }
         return sb.substring(0, sb.length() - 1);
+    }
+
+    private static void parseString(String text, XMLStreamWriter writer) throws XMLStreamException{
+        int strLen = text.length();
+        if ((text.charAt(0) == '[' && text.charAt(strLen - 1) == ']') ||
+                (text.charAt(0) == '{' && text.charAt(strLen-1) == '}')){
+            try {
+                String parsedJson = "";
+                List<Integer[]> sense = objectMapper.readValue(text, new TypeReference<List<Integer[]>>() {});
+                for (Integer[] mem: sense){
+                    StringJoiner sj = new StringJoiner(" ", "<mem>", "</mem>");
+                    for (Integer memId: mem){
+                        sj.add(memId.toString());
+                    }
+                    parsedJson += sj.toString();
+                }
+                writer.writeCData(parsedJson);
+            } catch (Exception e) {
+                log.warn("JSON is no valid, returned text itself. text: {} ", text);
+                writer.writeCharacters(text);
+            }
+        } else {
+            writer.writeCharacters(text);
+        }
     }
 
     public static long getStringKey (long hashBase, String str){
