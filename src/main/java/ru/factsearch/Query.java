@@ -39,52 +39,45 @@ public class Query {
     public static void main(String[] args){
         // Parse command line, set config variables
         Options options = new Options();
-        options.addOption(OptionBuilder
-                .withArgName("host addresses")
+        options.addOption(Option.builder("host")
                 .hasArg()
-                .withDescription(" connection point node host")
-                .withLongOpt("host")
-                .create());
-        options.addOption(OptionBuilder
-                .withArgName("port")
+                .desc(" connection point node host")
+                .longOpt("host")
+                .build());
+        options.addOption(Option.builder("port")
                 .hasArg()
-                .withDescription(" connection point node port")
-                .withLongOpt("port")
-                .create());
-        options.addOption(OptionBuilder
-                .withArgName("username")
+                .desc(" connection point node port")
+                .longOpt("port")
+                .build());
+        options.addOption(Option.builder("username")
                 .hasArg()
-                .withDescription(" username for authentication")
-                .withLongOpt("user")
-                .create());
-        options.addOption(OptionBuilder
-                .withArgName("password")
+                .desc(" username for authentication")
+                .longOpt("user")
+                .build());
+        options.addOption(Option.builder("password")
                 .hasArg()
-                .withDescription(" password for authentication")
-                .withLongOpt("pass")
-                .create());
-        options.addOption(OptionBuilder
-                .withArgName("cql")
+                .desc(" password for authentication")
+                .longOpt("pass")
+                .build());
+        options.addOption(Option.builder("cql")
                 .hasArg()
-                .withDescription(" CQL query")
-                .withLongOpt("cql")
-                .isRequired()
-                .create());
-        options.addOption(OptionBuilder
-                .withArgName("column_name, column_name")
-                .hasArgs(10)
-                .withValueSeparator(',')
-                .isRequired()
-                .withDescription("Names of key columns. If there are more than one bigint/int/varint column specified Sphinx key will be generated from key columns using hash function.")
-                .withLongOpt("keys")
-                .create());
-        options.addOption(OptionBuilder
-                .withArgName("debug file name")
+                .desc(" CQL query")
+                .longOpt("cql")
+                .required()
+                .build());
+        options.addOption(Option.builder("column_name, column_name")
+                .hasArgs()
+                .valueSeparator(',')
+                .required()
+                .desc("Names of key columns. If there are more than one bigint/int/varint column specified Sphinx key will be generated from key columns using hash function.")
+                .longOpt("keys")
+                .build());
+        options.addOption(Option.builder("debug file name")
                 .hasArg()
-                .withDescription(" turns debug mode. You need to specify debug file name.")
-                .withLongOpt("debug")
-                .create());
-        CommandLineParser parser = new BasicParser();
+                .desc(" turns debug mode. You need to specify debug file name.")
+                .longOpt("debug")
+                .build());
+        CommandLineParser parser = new DefaultParser();
         String cql = "";
         String[] connectionPoints = null;
         int connectionPointPort = 0;
@@ -288,16 +281,16 @@ public class Query {
         if ((text.charAt(0) == '[' && text.charAt(strLen - 1) == ']') ||
                 (text.charAt(0) == '{' && text.charAt(strLen-1) == '}')){
             try {
-                String parsedJson = "";
+                StringBuilder parsedJson = new StringBuilder();
                 List<Integer[]> sense = objectMapper.readValue(text, new TypeReference<List<Integer[]>>() {});
                 for (Integer[] mem: sense){
                     StringJoiner sj = new StringJoiner(" ", "<mem>", "</mem>");
                     for (Integer memId: mem){
                         sj.add(memId.toString());
                     }
-                    parsedJson += sj.toString();
+                    parsedJson.append(sj.toString());
                 }
-                writer.writeCData(parsedJson);
+                writer.writeCData(parsedJson.toString());
             } catch (Exception e) {
                 log.warn("JSON is no valid, returned text itself. text: {} ", text);
                 writer.writeCharacters(text);
@@ -307,7 +300,7 @@ public class Query {
         }
     }
 
-    public static long getStringKey (long hashBase, String str){
+    private static long getStringKey (long hashBase, String str){
         if (str == null) {
             return 0;
         }
